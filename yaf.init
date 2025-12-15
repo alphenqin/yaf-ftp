@@ -49,10 +49,10 @@ stats       = 300       -- 每 300s 输出一次统计记录
 
 flow2ftp = {
   -- FTP 服务器
-  ftp_host = "dev3.netlab.lycc.qihoo.net",
-  ftp_port = 21,
-  ftp_user = "test",
-  ftp_pass = "123456",
+  ftp_host = "127.0.0.1",
+  ftp_port = 2121,
+  ftp_user = "ftpuser",
+  ftp_pass = "ftppass",
   ftp_dir  = "/",   -- 还原区 FTP 目录 A
 
   -- 本地滚动文件策略
