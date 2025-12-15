@@ -31,6 +31,15 @@ type Flow2FTPConfig struct {
 	FilePrefix        string
 	UploadIntervalSec int
 	Timezone          string // 时区，例如 "Asia/Shanghai" 或 "UTC+8"，默认为 "Asia/Shanghai"
+	StatusReport      StatusReportConfig
+}
+
+// StatusReportConfig 状态上报配置
+type StatusReportConfig struct {
+	Enabled     bool
+	URL         string
+	IntervalSec int
+	UUID        string
 }
 
 // LoadConfig 从 yaf.init 文件中解析 flow2ftp 配置块
@@ -58,7 +67,7 @@ func LoadConfig(configPath string) (*Flow2FTPConfig, error) {
 	// 尝试多种方式获取 flow2ftp
 	// 方式1: 直接获取全局变量
 	tbl := L.GetGlobal("flow2ftp")
-	
+
 	// 方式2: 如果方式1失败，尝试通过 Lua 代码获取
 	if tbl == nil || tbl == lua.LNil {
 		// 尝试执行 Lua 代码获取
@@ -79,11 +88,11 @@ func LoadConfig(configPath string) (*Flow2FTPConfig, error) {
 				foundGlobals = append(foundGlobals, name)
 			}
 		}
-		
+
 		// 检查配置文件中是否包含 flow2ftp 关键字
 		contentStr := string(fileContent)
 		hasFlow2FTP := containsFlow2FTP(contentStr)
-		
+
 		// 尝试直接执行 flow2ftp 相关的 Lua 代码来诊断
 		diagnosticInfo := ""
 		if hasFlow2FTP {
@@ -94,7 +103,7 @@ func LoadConfig(configPath string) (*Flow2FTPConfig, error) {
 					L.Pop(1)
 				}
 			}
-			
+
 			// 查找 flow2ftp 所在的行用于调试
 			lines := strings.Split(contentStr, "\n")
 			for i, line := range lines {
@@ -114,7 +123,7 @@ func LoadConfig(configPath string) (*Flow2FTPConfig, error) {
 				}
 			}
 		}
-		
+
 		errMsg := fmt.Sprintf("未找到 flow2ftp 配置块。检测到的全局变量: %v", foundGlobals)
 		if hasFlow2FTP {
 			errMsg += fmt.Sprintf(" (配置文件中包含 flow2ftp 关键字，但 Lua 解析时未注册为全局变量%s)", diagnosticInfo)
@@ -183,6 +192,26 @@ func LoadConfig(configPath string) (*Flow2FTPConfig, error) {
 	if val := flowTbl.RawGetString("timezone"); val != nil && val != lua.LNil {
 		cfg.Timezone = val.String()
 	}
+	if val := flowTbl.RawGetString("status_report"); val != nil && val != lua.LNil {
+		if tbl, ok := val.(*lua.LTable); ok {
+			if v := tbl.RawGetString("enabled"); v != nil && v != lua.LNil {
+				if b, ok := v.(lua.LBool); ok {
+					cfg.StatusReport.Enabled = bool(b)
+				}
+			}
+			if v := tbl.RawGetString("url"); v != nil && v != lua.LNil {
+				cfg.StatusReport.URL = v.String()
+			}
+			if v := tbl.RawGetString("interval_sec"); v != nil && v != lua.LNil {
+				if num, ok := v.(lua.LNumber); ok {
+					cfg.StatusReport.IntervalSec = int(num)
+				}
+			}
+			if v := tbl.RawGetString("uuid"); v != nil && v != lua.LNil {
+				cfg.StatusReport.UUID = v.String()
+			}
+		}
+	}
 
 	// 验证配置
 	if err := validateConfig(cfg); err != nil {
@@ -191,7 +220,6 @@ func LoadConfig(configPath string) (*Flow2FTPConfig, error) {
 
 	return cfg, nil
 }
-
 
 // validateConfig 验证配置的有效性
 func validateConfig(cfg *Flow2FTPConfig) error {
@@ -225,6 +253,15 @@ func validateConfig(cfg *Flow2FTPConfig) error {
 	if cfg.Timezone == "" {
 		cfg.Timezone = "Asia/Shanghai" // 默认东八区
 	}
+	if cfg.StatusReport.Enabled {
+		if cfg.StatusReport.IntervalSec < 1 {
+			cfg.StatusReport.IntervalSec = 60
+		}
+		// URL 需非空
+		if cfg.StatusReport.URL == "" {
+			return fmt.Errorf("status_report.url 不能为空（已启用 enabled=true）")
+		}
+	}
 
 	return nil
 }
@@ -246,4 +283,3 @@ func EnsureDataDir(dataDir string) error {
 	}
 	return nil
 }
-

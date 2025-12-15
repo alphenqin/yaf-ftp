@@ -30,8 +30,8 @@ export = {
 }
 
 -- 流超时（单位：秒）
-idle_timeout   = 300    -- 空闲 300s 关闭流
-active_timeout = 1800   -- 活跃 30min 切新流
+idle_timeout   = 60    -- 空闲 300s 关闭流
+active_timeout = 60   -- 活跃 30min 切新流
 
 -- BPF 过滤器（示例：采集所有 IP，排除 ssh）
 filter = "ip and not port 22"
@@ -49,10 +49,10 @@ stats       = 300       -- 每 300s 输出一次统计记录
 
 flow2ftp = {
   -- FTP 服务器
-  ftp_host = "127.0.0.1",
-  ftp_port = 2121,
-  ftp_user = "ftpuser",
-  ftp_pass = "ftppass",
+  ftp_host = "dev3.netlab.lycc.qihoo.net",
+  ftp_port = 21,
+  ftp_user = "test",
+  ftp_pass = "123456",
   ftp_dir  = "/",   -- 还原区 FTP 目录 A
 
   -- 本地滚动文件策略
@@ -64,5 +64,14 @@ flow2ftp = {
   upload_interval_sec = 60,   -- 每 600s 扫描 /data，把未上传 .gz 推 FTP
 
   -- 时区（默认东八区，显式指定方便对齐本地时间）
-  timezone = "Asia/Shanghai"
+  timezone = "Asia/Shanghai",
+
+  -- 状态上报（可选）
+  status_report = {
+    enabled = false,                    -- 需要上报时改为 true
+    url = "http://127.0.0.1:8080/api/uploadStatus", -- 上报地址
+    interval_sec = 60,                  -- 上报周期（秒）
+    uuid = ""                           -- 留空则使用 hostname
+  }
 }
+

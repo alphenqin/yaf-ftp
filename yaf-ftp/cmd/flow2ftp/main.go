@@ -8,11 +8,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/yaf-ftp/flow2ftp/internal/config"
 	"github.com/yaf-ftp/flow2ftp/internal/converter"
+	"github.com/yaf-ftp/flow2ftp/internal/statusreport"
 	"github.com/yaf-ftp/flow2ftp/internal/uploader"
 	"github.com/yaf-ftp/flow2ftp/internal/writer"
 )
@@ -51,6 +53,17 @@ func main() {
 	// 创建 Writer
 	w := writer.NewWriter(*dataDir, cfg.FilePrefix, cfg.RotateIntervalSec, cfg.RotateSizeMB)
 
+	// 状态上报器
+	reporter, err := statusreport.NewReporter(cfg.StatusReport)
+	if err != nil {
+		log.Fatalf("[ERROR] 初始化状态上报失败: %v", err)
+	}
+	// 运行上报 goroutine（如果启用）
+	if reporter != nil {
+		go reporter.Run(ctx.Done())
+		log.Printf("[INFO] 状态上报已启用，目标: %s，周期: %ds", cfg.StatusReport.URL, cfg.StatusReport.IntervalSec)
+	}
+
 	// 创建 Uploader
 	up := uploader.NewUploader(
 		cfg.FTPHost,
@@ -76,7 +89,7 @@ func main() {
 	// 启动从 stdin 读取并写入的 goroutine
 	done := make(chan error, 1)
 	go func() {
-		done <- processStdin(ctx, w, cfg.Timezone)
+		done <- processStdin(ctx, w, cfg.Timezone, reporter)
 	}()
 
 	// 等待信号或完成
@@ -103,11 +116,13 @@ func main() {
 }
 
 // processStdin 从标准输入读取数据并写入文件
-func processStdin(ctx context.Context, w *writer.Writer, timezone string) error {
+func processStdin(ctx context.Context, w *writer.Writer, timezone string, reporter *statusreport.Reporter) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	lineCount := 0
 	var timeConverter *converter.TimeConverter
 	headerProcessed := false
+	packetIdx := -1
+	octetIdx := -1
 
 	for {
 		select {
@@ -141,6 +156,18 @@ func processStdin(ctx context.Context, w *writer.Writer, timezone string) error 
 						log.Printf("[INFO] 时间转换器已初始化，目标时区: %s", timezone)
 					}
 					headerProcessed = true
+
+					// 解析字段索引（包/字节统计）
+					fields := strings.Split(line, "|")
+					for i, f := range fields {
+						ft := strings.TrimSpace(f)
+						switch ft {
+						case "packetTotalCount":
+							packetIdx = i
+						case "octetTotalCount":
+							octetIdx = i
+						}
+					}
 				}
 				// 表头行直接写入，不转换
 				if err := w.WriteLine(line); err != nil {
@@ -162,6 +189,13 @@ func processStdin(ctx context.Context, w *writer.Writer, timezone string) error 
 				}
 			}
 
+			// 统计包/字节数
+			if reporter != nil && packetIdx >= 0 && octetIdx >= 0 {
+				if pkts, bytes := parseCounts(outputLine, packetIdx, octetIdx); pkts > 0 || bytes > 0 {
+					reporter.Add(pkts, bytes)
+				}
+			}
+
 			if err := w.WriteLine(outputLine); err != nil {
 				log.Printf("[ERROR] 写入数据失败: %v", err)
 				// 继续处理，不中断
@@ -176,3 +210,13 @@ func processStdin(ctx context.Context, w *writer.Writer, timezone string) error 
 	}
 }
 
+// parseCounts 从行中按索引解析包/字节数
+func parseCounts(line string, pktIdx, byteIdx int) (int64, int64) {
+	fields := strings.Split(line, "|")
+	if pktIdx >= len(fields) || byteIdx >= len(fields) {
+		return 0, 0
+	}
+	pkts, _ := strconv.ParseInt(strings.TrimSpace(fields[pktIdx]), 10, 64)
+	bytes, _ := strconv.ParseInt(strings.TrimSpace(fields[byteIdx]), 10, 64)
+	return pkts, bytes
+}

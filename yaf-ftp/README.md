@@ -28,6 +28,7 @@ flow2ftp 是项目的核心组件，使用 Go 语言开发，负责：
 ### flow2ftp 组件
 - **滚动文件写入**：按时间间隔和文件大小自动滚动生成新的压缩文件
 - **FTP 自动上传**：定时扫描本地目录，自动上传已完成的压缩文件到 FTP 服务器
+- **状态上报（可选）**：支持按周期 HTTP 上报运行统计
 - **配置驱动**：所有参数通过 `yaf.init` 配置文件中的 `flow2ftp` 配置块管理
 - **优雅关闭**：支持信号处理，确保数据不丢失
 
@@ -110,7 +111,15 @@ flow2ftp = {
     file_prefix         = "flows_",  -- 文件前缀：flows_YYYYMMDD_HHMMSS_XXX.csv.gz
 
     -- 上传策略：仅按固定间隔定时扫描上传
-    upload_interval_sec = 600   -- 每隔 600 秒扫描一次 data-dir，把未上传 .gz 文件 FTP 上传
+    upload_interval_sec = 600,  -- 每隔 600 秒扫描一次 data-dir，把未上传 .gz 文件 FTP 上传
+
+    -- 可选：状态上报
+    status_report = {
+        enabled = false,              -- 设为 true 启用
+        url = "http://127.0.0.1:8080/api/uploadStatus", -- 上报地址
+        interval_sec = 60,            -- 上报周期（秒）
+        uuid = ""                     -- 节点唯一标识，留空则使用 hostname
+    }
 }
 ```
 

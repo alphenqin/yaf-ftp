@@ -225,7 +225,7 @@ set -eu
 
 YAF_CONFIG_FILE="${YAF_CONFIG_FILE:-/etc/yaf/yaf.init}"
 SM_LISTEN_PORT="${SM_LISTEN_PORT:-18000}"
-SM_FIELDS="${SM_FIELDS:-flowStartMilliseconds,flowEndMilliseconds,sourceIPv4Address,destinationIPv4Address,sourceTransportPort,destinationTransportPort,protocolIdentifier,silkAppLabel}"
+SM_FIELDS="${SM_FIELDS:-flowStartMilliseconds,flowEndMilliseconds,sourceIPv4Address,destinationIPv4Address,sourceTransportPort,destinationTransportPort,protocolIdentifier,silkAppLabel,octetTotalCount,packetTotalCount,initialTCPFlags,ipClassOfService,ingressInterface,egressInterface}"
 
 echo "[start_pipeline] super_mediator 监听端口: ${SM_LISTEN_PORT}"
 echo "[start_pipeline] TEXT 输出字段: ${SM_FIELDS}"
@@ -259,9 +259,9 @@ chmod=0700
 
 [supervisord]
 nodaemon=true
-logfile=/var/log/supervisor/supervisord.log
-logfile_maxbytes=50MB
-logfile_backups=5
+logfile=/dev/stdout
+logfile_maxbytes=0
+logfile_backups=0
 pidfile=/var/run/supervisor/supervisord.pid
 user=root
 
@@ -272,16 +272,24 @@ autorestart=true
 startsecs=3
 environment=PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib64"
 stdout_logfile=/var/log/supervisor/yaf.log
-stderr_logfile=/var/log/supervisor/yaf.log
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+stderr_logfile=/dev/stdout
+stderr_logfile_maxbytes=0
+stderr_logfile_backups=0
 
 [program:pipeline]
 command=/bin/bash /usr/local/bin/start_pipeline.sh
-user=yaf
+user=root
 autorestart=true
 startsecs=3
 environment=PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib64"
 stdout_logfile=/var/log/supervisor/pipeline.log
-stderr_logfile=/var/log/supervisor/pipeline.log
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+stderr_logfile=/dev/stdout
+stderr_logfile_maxbytes=0
+stderr_logfile_backups=0
 EOF
 
 
