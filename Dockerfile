@@ -209,12 +209,27 @@ RUN cat >/usr/local/bin/start_yaf.sh <<'EOF'
 set -eu
 
 YAF_CONFIG_FILE="${YAF_CONFIG_FILE:-/etc/yaf/yaf.init}"
+SM_LISTEN_PORT="${SM_LISTEN_PORT:-18000}"
+MAX_WAIT=60
 
 echo "[start_yaf] 使用 YAF 配置文件: ${YAF_CONFIG_FILE}"
 if [ ! -f "${YAF_CONFIG_FILE}" ]; then
   echo "[start_yaf] ERROR: 未找到 ${YAF_CONFIG_FILE}" >&2
   exit 1
 fi
+
+# 等待 super_mediator 端口就绪
+echo "[start_yaf] 等待 super_mediator 端口 ${SM_LISTEN_PORT} 就绪..."
+waited=0
+while ! nc -z localhost "${SM_LISTEN_PORT}" 2>/dev/null; do
+  if [ $waited -ge $MAX_WAIT ]; then
+    echo "[start_yaf] ERROR: 等待 ${MAX_WAIT}s 后端口仍未就绪，放弃" >&2
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+echo "[start_yaf] 端口 ${SM_LISTEN_PORT} 已就绪，启动 YAF..."
 
 exec /usr/local/bin/yaf --config "${YAF_CONFIG_FILE}" "$@"
 EOF
@@ -229,6 +244,20 @@ SM_FIELDS="${SM_FIELDS:-flowStartMilliseconds,flowEndMilliseconds,sourceIPv4Addr
 
 echo "[start_pipeline] super_mediator 监听端口: ${SM_LISTEN_PORT}"
 echo "[start_pipeline] TEXT 输出字段: ${SM_FIELDS}"
+
+# 检查端口是否已被占用，如果是则等待释放
+MAX_WAIT=30
+waited=0
+while nc -z localhost "${SM_LISTEN_PORT}" 2>/dev/null; do
+  echo "[start_pipeline] 端口 ${SM_LISTEN_PORT} 仍被占用，等待释放..."
+  if [ $waited -ge $MAX_WAIT ]; then
+    echo "[start_pipeline] ERROR: 端口 ${SM_LISTEN_PORT} 在 ${MAX_WAIT}s 后仍被占用" >&2
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+echo "[start_pipeline] 端口 ${SM_LISTEN_PORT} 可用，启动 super_mediator..."
 
 exec /bin/bash -c "
   /usr/local/bin/super_mediator \
@@ -265,26 +294,38 @@ logfile_backups=0
 pidfile=/var/run/supervisor/supervisord.pid
 user=root
 
-[program:yaf]
-command=/bin/bash /usr/local/bin/start_yaf.sh
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///var/run/supervisor/supervisor.sock
+
+[program:pipeline]
+command=/bin/bash /usr/local/bin/start_pipeline.sh
 user=root
 autorestart=true
-startsecs=3
+startsecs=5
+startretries=10
+stopwaitsecs=10
+priority=100
 environment=PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib64"
-stdout_logfile=/var/log/supervisor/yaf.log
+stdout_logfile=/var/log/supervisor/pipeline.log
 stdout_logfile_maxbytes=20MB
 stdout_logfile_backups=5
 stderr_logfile=/dev/stdout
 stderr_logfile_maxbytes=0
 stderr_logfile_backups=0
 
-[program:pipeline]
-command=/bin/bash /usr/local/bin/start_pipeline.sh
+[program:yaf]
+command=/bin/bash /usr/local/bin/start_yaf.sh
 user=root
 autorestart=true
-startsecs=3
+startsecs=5
+startretries=10
+stopwaitsecs=10
+priority=200
 environment=PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib64"
-stdout_logfile=/var/log/supervisor/pipeline.log
+stdout_logfile=/var/log/supervisor/yaf.log
 stdout_logfile_maxbytes=20MB
 stdout_logfile_backups=5
 stderr_logfile=/dev/stdout
